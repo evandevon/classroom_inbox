@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Connect to my teacher</title>
+  <meta name="theme-color" content="#185FA5">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="../icons/inbox.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/site.css">
+  <script type="module" src="../js/join.js"></script>
+</head>
+<body class="join-page">
+  <header class="appbar">
+    <img src="../icons/inbox.svg" alt="" width="40" height="40">
+    <div class="title">Connect to my teacher</div>
+  </header>
+
+  <main id="main">
+    <!-- One card shows at a time; join.js picks which. -->
+    <section id="v-loading" class="card" aria-live="polite">
+      <p>Reading the QR code…</p>
+    </section>
+
+    <section id="v-none" class="card" hidden aria-labelledby="h-none">
+      <div class="emoji" aria-hidden="true">📷</div>
+      <h1 id="h-none" tabindex="-1">Scan your class QR code</h1>
+      <p>Open the <strong>Camera</strong> on your iPad, point it at the QR code your teacher gave you, and tap the link that appears.</p>
+      <p id="none-current" class="small" hidden></p>
+      <p class="small">Teachers: make class QR codes on the <a href="../">Classroom Inbox teacher page</a>.</p>
+    </section>
+
+    <section id="v-bad" class="card" hidden aria-labelledby="h-bad">
+      <div class="emoji" aria-hidden="true">🤔</div>
+      <h1 id="h-bad" tabindex="-1">That QR code didn’t work</h1>
+      <p>It isn’t a class QR code this page understands. Ask your teacher for a new one.</p>
+    </section>
+
+    <section id="v-expired" class="card" hidden aria-labelledby="h-expired">
+      <div class="emoji" aria-hidden="true">⏰</div>
+      <h1 id="h-expired" tabindex="-1">That class QR code has expired.</h1>
+      <p>Ask your teacher for a new one.</p>
+    </section>
+
+    <section id="v-ask" class="card" hidden aria-labelledby="h-ask">
+      <div class="emoji" aria-hidden="true">📨</div>
+      <h1 id="h-ask" tabindex="-1">Send your work to <span class="class-name"></span>?</h1>
+      <p>Only say yes to a QR code your teacher gave you.</p>
+      <p id="ask-switch" class="small" hidden></p>
+      <div class="big-buttons">
+        <button id="yes" class="btn primary" type="button">Yes, connect</button>
+        <button id="no" class="btn" type="button">No</button>
+      </div>
+    </section>
+
+    <section id="v-working" class="card" hidden aria-live="polite">
+      <p>Connecting to your teacher…</p>
+    </section>
+
+    <section id="v-error" class="card" hidden aria-labelledby="h-error">
+      <div class="emoji" aria-hidden="true">⚠️</div>
+      <h1 id="h-error" tabindex="-1">Couldn’t connect</h1>
+      <p id="error-msg"></p>
+      <div class="big-buttons">
+        <button id="retry" class="btn primary" type="button">Try again</button>
+      </div>
+    </section>
+
+    <section id="v-no" class="card" hidden aria-labelledby="h-no">
+      <h1 id="h-no" tabindex="-1">OK, not connected</h1>
+      <p>Nothing was changed. You can close this page.</p>
+    </section>
+
+    <section id="v-done" class="card" hidden aria-labelledby="h-done">
+      <div class="emoji" aria-hidden="true">✅</div>
+      <h1 id="h-done" tabindex="-1">You’re connected to <span class="class-name"></span></h1>
+      <p>Work you send from PagePal or Word Helper goes to your teacher.</p>
+      <div id="tool-buttons" class="big-buttons"></div>
+      <p class="small"><strong>Opening PagePal or Word Helper from the Home Screen?</strong> Those keep their own settings, so connect them there too: open the app, choose <span id="connect-hints"></span>, and scan this same QR code.</p>
+    </section>
+  </main>
+</body>
+</html>

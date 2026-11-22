@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Classroom Inbox for teachers</title>
+  <meta name="description" content="Set up one inbox for the work students send from PagePal and Word Helper, and make class QR codes.">
+  <meta name="theme-color" content="#185FA5">
+  <link rel="icon" href="icons/inbox.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/site.css">
+  <script type="module" src="js/teacher.js"></script>
+  <script>
+    // If the page's code can't start (opened as a file, or a blocked download), say so.
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        if (window.__inboxReady) return;
+        var b = document.createElement('p');
+        b.className = 'status error';
+        b.setAttribute('role', 'alert');
+        b.textContent = location.protocol === 'file:'
+          ? 'This page can’t run from a file on your computer. Open https://evandevon.github.io/classroom_inbox/ instead.'
+          : 'This page didn’t start properly, so the buttons won’t work. Reload it (Ctrl + Shift + R, or ⌘ + Shift + R), or try Chrome, Edge or Safari.';
+        document.querySelector('main').prepend(b);
+      }, 3000);
+    });
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the steps</a>
+  <header class="appbar">
+    <img src="icons/inbox.svg" alt="" width="40" height="40">
+    <div>
+      <h1>Classroom Inbox</h1>
+      <div class="sub">For teachers</div>
+    </div>
+  </header>
+
+  <main id="main">
+    <p class="intro">Students send work from PagePal and Word Helper straight to your Google Drive: one spreadsheet and one folder for each tool, all in a <strong>Classroom Inbox</strong> folder. Set it up once (step 1), then make a class QR code for each class (steps 2 and 3).</p>
+
+    <!-- ── Step 1 ─────────────────────────────────────── -->
+    <section class="card" aria-labelledby="h1-setup">
+      <h2 id="h1-setup"><span class="step-num" aria-hidden="true">1</span> Set up the inbox</h2>
+      <p class="lead">About 10 minutes, once. Already set up? Skip to step 2. Updating from an older version? Use the same Google Sheet and follow every step; your class QR codes keep working.</p>
+
+      <ol class="steps">
+        <li>
+          <strong>Open a Google Sheet.</strong> New: go to <a href="https://sheets.new" target="_blank" rel="noopener">sheets.new</a> and name it “Classroom Inbox”. Updating: open the sheet you set up before.
+        </li>
+        <li>
+          <strong>Paste the script.</strong> In the sheet, choose <span class="path">Extensions › Apps Script</span>. Select everything in <code>Code.gs</code>, delete it, and paste this script in its place.
+          <div class="buttons">
+            <button id="copy-gs" class="btn primary" type="button">Copy the script</button>
+            <a id="download-gs" class="btn" href="apps-script/Classroom-Inbox.gs" download="Classroom-Inbox.gs">Download it</a>
+          </div>
+          <details class="code-box">
+            <summary>Show the script</summary>
+            <pre id="gs-text" tabindex="0" aria-label="The Classroom Inbox script">Loading…</pre>
+          </details>
+        </li>
+        <li>
+          <strong>Limit what it can open.</strong> Click <span class="path">Project Settings</span> (the cog, left-hand side) and tick <span class="path">Show “appsscript.json” manifest file in editor</span>. Go back to the <span class="path">Editor</span> (the &lt; &gt; icon), open <code>appsscript.json</code>, and replace everything in it with this.
+          <div class="buttons">
+            <button id="copy-json" class="btn primary" type="button">Copy appsscript.json</button>
+          </div>
+          <details class="code-box">
+            <summary>Show appsscript.json</summary>
+            <pre id="json-text" tabindex="0" aria-label="appsscript.json">Loading…</pre>
+          </details>
+          <p class="hint">This lets the script open only this sheet and the files it makes itself, never your other files.</p>
+        </li>
+        <li>
+          <strong>Add the Google Sheets API service.</strong> Next to <span class="path">Services</span> (left-hand side), click <span class="path">+</span>, choose <span class="path">Google Sheets API</span>, then <span class="path">Add</span>. (If it’s already listed, skip this.)
+        </li>
+        <li>
+          <strong>Run setup.</strong> Click <span class="path">Save</span> (the disk icon). In the function list at the top choose <code>setup</code>, then click <span class="path">Run</span>. Allow access when Google asks.
+          <p class="hint">Google may say it “hasn’t verified this app”. It’s your own script, so click <span class="path">Advanced › Go to … (unsafe)</span>, then <span class="path">Allow</span>.</p>
+          The <span class="path">Execution log</span> then lists where each tool’s work goes and shows your <strong>secret code</strong>. Keep that code private; you need it in step 2.
+        </li>
+        <li>
+          <strong>Deploy it.</strong>
+          <div class="tabs" role="tablist" aria-label="Deploying">
+            <button id="tab-first" role="tab" type="button" aria-selected="true" aria-controls="panel-first">First time</button>
+            <button id="tab-update" role="tab" type="button" aria-selected="false" aria-controls="panel-update" tabindex="-1">Updating</button>
+          </div>
+          <div id="panel-first" class="tabpanel" role="tabpanel" aria-labelledby="tab-first" tabindex="0">
+            <span class="path">Deploy › New deployment</span>. Click the cog next to <span class="path">Select type</span> and choose <span class="path">Web app</span>. Set <span class="path">Execute as: Me</span> and <span class="path">Who has access: Anyone</span>, then <span class="path">Deploy</span>. Copy the <strong>Web app URL</strong> (it ends in <code>/exec</code>).
+          </div>
+          <div id="panel-update" class="tabpanel" role="tabpanel" aria-labelledby="tab-update" tabindex="0" hidden>
+            <span class="path">Deploy › Manage deployments</span>. Click the <strong>pencil</strong> (Edit), set <span class="path">Version</span> to <span class="path">New version</span>, then <span class="path">Deploy</span>.
+            <p class="note-box">The Version box is greyed out until you click the pencil. Don’t make a new deployment: updating the existing one keeps the same address, so your class QR codes and connected iPads keep working.</p>
+          </div>
+        </li>
+      </ol>
+      <p class="hint" style="margin-top:14px">Want the Google Sheet inside the Classroom Inbox folder too? Drag it there in Google Drive yourself; the script can only move files it made.</p>
+    </section>
+
+    <!-- ── Step 2 ─────────────────────────────────────── -->
+    <section class="card" aria-labelledby="h2-connect">
+      <h2 id="h2-connect"><span class="step-num" aria-hidden="true">2</span> Connect this page</h2>
+      <p class="lead">This page remembers your class name and the address on this computer, never the secret code.</p>
+
+      <label for="in-name">Class name, as students know it <span class="hint">For example: Mr Evans 3/4B. Teach more than one class? Use the same address and secret code with a different name for each.</span></label>
+      <input id="in-name" type="text" autocomplete="off" placeholder="Mr Evans 3/4B" maxlength="80">
+
+      <label for="in-url">Web app URL <span class="hint">From Deploy. Starts with https://script.google.com/ and ends in /exec.</span></label>
+      <input id="in-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+
+      <label for="in-secret">Secret code <span class="hint">From the Execution log. To see it again, run <code>showStatus</code>.</span></label>
+      <div class="with-btn">
+        <input id="in-secret" type="password" autocomplete="off" spellcheck="false" placeholder="24 letters and numbers">
+        <button id="show-secret" class="btn" type="button" aria-pressed="false" aria-controls="in-secret">Show</button>
+      </div>
+
+      <div class="buttons">
+        <button id="check" class="btn primary" type="button">Check the connection</button>
+      </div>
+      <div id="check-status" class="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- ── Step 3 ─────────────────────────────────────── -->
+    <section class="card" aria-labelledby="h3-qr">
+      <h2 id="h3-qr"><span class="step-num" aria-hidden="true">3</span> Make a class QR code</h2>
+      <p class="lead">Students scan it once with the iPad camera. From then on, work they send from PagePal or Word Helper arrives in your inbox.</p>
+
+      <label for="in-days">The QR code connects new iPads for <span class="hint">After that it stops working, so a photo of it can’t be used later. iPads already connected keep sending.</span></label>
+      <select id="in-days">
+        <option value="1">1 day</option>
+        <option value="7" selected>1 week</option>
+        <option value="14">2 weeks</option>
+        <option value="28">4 weeks</option>
+        <option value="80">The whole term (80 days)</option>
+      </select>
+
+      <div class="buttons">
+        <button id="make" class="btn primary" type="button">Make the QR code</button>
+      </div>
+      <div id="make-status" class="status" role="status" aria-live="polite"></div>
+
+      <div id="qr-result" class="qr-result print-card" hidden>
+        <div id="qr" class="qr-box"></div>
+        <p id="qr-label" class="qr-label"></p>
+        <p class="qr-sub">Scan with the iPad camera</p>
+        <p id="qr-expiry" class="qr-sub"></p>
+        <div class="buttons no-print">
+          <button id="qr-copy" class="btn" type="button">Copy link</button>
+          <button id="qr-png" class="btn" type="button">Download picture</button>
+          <button id="qr-print" class="btn primary" type="button">Print</button>
+        </div>
+        <p id="qr-link" class="link-out no-print"></p>
+        <div class="status warn no-print tips">
+          <strong>Keeping it safe</strong>
+          <ul>
+            <li>Show it while students connect, then take it down. Anyone who scans it before it expires can send work to your inbox (they can never read it).</li>
+            <li>At the start of each term, or if the code spreads, run <code>resetCode</code> in Apps Script. Connected iPads then need a new QR code.</li>
+            <li>Open students’ pictures and PDFs in Google Drive’s viewer rather than downloading them, and be wary of web links inside answers.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Tools ──────────────────────────────────────── -->
+    <section class="card" aria-labelledby="h-tools">
+      <h2 id="h-tools">Your tools</h2>
+      <p id="tools-lead" class="lead">Check the connection (step 2) to see which tools your inbox accepts.</p>
+      <ul id="tools" class="tool-list"></ul>
+    </section>
+  </main>
+
+  <footer>
+    Classroom Inbox · <a href="https://github.com/evandevon/classroom_inbox" target="_blank" rel="noopener">Code and script on GitHub</a>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
