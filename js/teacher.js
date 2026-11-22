@@ -172,9 +172,14 @@ async function check(el) {
   renderTools(info.tools);
   const names = toolList(info.tools).filter(t => t.accepted).map(t => escapeHtml(t.name));
   const accepts = `It accepts work from ${names.join(' and ')}.`;
+  const pausedNote = info.paused
+    ? '<p><strong>Your inbox is paused</strong>, so nothing is being received. Run <code>resumeInbox</code> in Apps Script to turn it back on.</p>' : '';
   if (info.version >= LATEST_VERSION) {
-    setStatus(el, 'ok', `<p>Connected: Classroom Inbox, version ${info.version}. ${accepts}</p>` +
+    setStatus(el, info.paused ? 'warn' : 'ok', `<p>Connected: Classroom Inbox, version ${info.version}. ${accepts}</p>` + pausedNote +
       '<p>The secret code is checked when you make the QR code.</p>');
+  } else if (info.version >= 5) {
+    setStatus(el, 'warn', `<p>Connected: Classroom Inbox, version ${info.version}. ${accepts}</p>` +
+      `<p>It works. Version ${LATEST_VERSION} adds QR codes that never expire, and switches to pause the inbox or cancel class codes. ${UPDATE_HOW}</p>`);
   } else if (info.version >= 4) {
     setStatus(el, 'warn', `<p>Connected, but your script is version ${info.version}. ${accepts}</p>` +
       `<p>It still works. Version ${LATEST_VERSION} puts every tool’s work in one Classroom Inbox folder, with a spreadsheet each. ${UPDATE_HOW}</p>`);
@@ -242,10 +247,19 @@ $('#make').addEventListener('click', async e => {
     if (!info) { setStatus(el, 'error', 'Couldn’t connect. See step 2.'); return; }
     if (info.version < 2) { setStatus(el, 'error', 'Your script needs updating before it can make class QR codes. See step 2.'); return; }
     setStatus(el, 'ok', 'Making the QR code…');
-    const days = Number($('#in-days').value) || 7;
+    const forever = $('#in-days').value === 'forever';
+    if (forever && info.version < 6) {
+      setStatus(el, 'error', `Your inbox script is version ${info.version}, which can’t make QR codes that never expire. Choose a length, or update the script (see step 2).`);
+      return;
+    }
+    const days = forever ? 'forever' : Number($('#in-days').value) || 7;
     const result = await newJoinCode(f.url, f.secret, days, f.name);
     if (!result.ok || !result.join) {
-      setStatus(el, 'error', result.error === 'wrong-code'
+      setStatus(el, 'error', result.error === 'paused'
+        ? 'Your inbox is paused. Run <code>resumeInbox</code> in Apps Script, then try again.'
+        : result.error === 'too-many-codes'
+          ? 'You already have 20 QR codes that never expire. Run <code>cancelClassCodes</code> in Apps Script to clear them, then make a new one.'
+          : result.error === 'wrong-code'
         ? 'Your inbox answered, but the secret code doesn’t match. Copy it again from the Execution log (run <code>showStatus</code> to see it).'
         : result.error === 'busy' ? 'Your inbox is busy. Wait a minute and try again.'
           : 'Couldn’t make the QR code. Check:' + CHECKLIST);
@@ -253,13 +267,17 @@ $('#make').addEventListener('click', async e => {
     }
     remember(f.name, f.url);
     const url = joinLink(JOIN_PAGE, { name: f.name, url: f.url, join: result.join, expires: result.expires });
-    const until = new Date(result.expires).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    current = { qr: makeQr(url), url, label: f.name, expiry: 'Connects new iPads until ' + until };
+    const until = result.expires
+      ? 'Connects new iPads until ' + new Date(result.expires).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      : 'Connects new iPads until you cancel it';
+    current = { qr: makeQr(url), url, label: f.name, expiry: until };
     $('#qr').innerHTML = qrSvg(current.qr, 'Class QR code for ' + f.name);
     $('#qr-label').textContent = f.name;
     $('#qr-expiry').textContent = current.expiry;
     $('#qr-link').textContent = url;
-    setStatus(el, 'ok', 'Done. Print it, or show it on the board while students scan it.');
+    setStatus(el, result.expires ? 'ok' : 'warn', result.expires
+      ? 'Done. Print it, or show it on the board while students scan it.'
+      : 'Done. This QR code never expires, so anyone with it (or a photo of it) can join your inbox until you cancel it: run <code>cancelClassCodes</code> in Apps Script. Keep it somewhere students only see in class.');
     $('#qr-result').hidden = false;
     requestAnimationFrame(() => $('#qr-result').scrollIntoView({ behavior: 'smooth', block: 'start' }));
   } finally {

@@ -113,7 +113,7 @@ test('setup says exactly how to switch on the Sheets API', () => {
 
 test('GET reply still says PagePal Inbox (Word Helper checks it) and lists the tools', () => {
   const env = ready();
-  assert.deepEqual(env.get(), { ok: true, app: 'PagePal Inbox', name: 'Classroom Inbox', version: 5, tools: ['pagepal', 'word-helper'] });
+  assert.deepEqual(env.get(), { ok: true, app: 'PagePal Inbox', name: 'Classroom Inbox', version: 6, tools: ['pagepal', 'word-helper'], paused: false });
 });
 
 // ── Upgrading from version 4 ───────────────────────────
@@ -343,6 +343,50 @@ test('join codes swap for the key, and stop working when they expire', () => {
   joins[made.join].exp = Date.now() - 1;
   env.store.set('JOINS', JSON.stringify(joins));
   assert.deepEqual(env.post({ action: 'join', join: made.join }), { ok: false, error: 'expired-join' });
+});
+
+test('a forever code never expires, and cancelClassCodes stops it (joined iPads keep sending)', () => {
+  const env = ready();
+  const made = env.post({ action: 'newJoin', secret: key(env), days: 'forever', label: '3/4K' });
+  assert.equal(made.ok, true);
+  assert.equal(made.expires, 0, 'no expiry date');
+  const week = env.post({ action: 'newJoin', secret: key(env), days: 7, label: '3/4K' });
+  // Let the week code run out: the forever code still works, the week code doesn't.
+  const joins = JSON.parse(env.store.get('JOINS'));
+  joins[week.join].exp = Date.now() - 1;
+  env.store.set('JOINS', JSON.stringify(joins));
+  assert.deepEqual(env.post({ action: 'join', join: made.join }), { ok: true, key: key(env), name: '3/4K' });
+  assert.deepEqual(env.post({ action: 'join', join: week.join }), { ok: false, error: 'expired-join' });
+  assert.ok(JSON.parse(env.store.get('JOINS'))[made.join], 'the tidy-up keeps forever codes');
+  env.run('cancelClassCodes()');
+  assert.match(env.lastLog(), /cancelled/);
+  assert.deepEqual(env.post({ action: 'join', join: made.join }), { ok: false, error: 'expired-join' });
+  const sent = env.post({ action: 'submit', tool: 'word-helper', secret: key(env), student: 'Ava', answer: 'hi' });
+  assert.equal(sent.ok, true, 'iPads that already joined still send');
+});
+
+test('at most 20 forever codes at once', () => {
+  const env = ready();
+  for (let i = 0; i < 20; i++) assert.equal(env.post({ action: 'newJoin', secret: key(env), days: 'forever', label: 'c' }).ok, true);
+  assert.deepEqual(env.post({ action: 'newJoin', secret: key(env), days: 'forever', label: 'c' }), { ok: false, error: 'too-many-codes' });
+  assert.equal(env.post({ action: 'newJoin', secret: key(env), days: 7, label: 'c' }).ok, true, 'dated codes still fine');
+});
+
+test('pauseInbox stops joining, making codes and sending; resumeInbox turns it back on', () => {
+  const env = ready();
+  const made = env.post({ action: 'newJoin', secret: key(env), days: 7, label: '3/4K' });
+  env.run('pauseInbox()');
+  assert.equal(env.get().paused, true);
+  assert.deepEqual(env.post({ action: 'join', join: made.join }), { ok: false, error: 'paused' });
+  assert.deepEqual(env.post({ action: 'newJoin', secret: key(env), days: 7 }), { ok: false, error: 'paused' });
+  const before = rowsOf(env, 'WH_SHEET_ID').length;
+  assert.deepEqual(env.post({ action: 'submit', tool: 'word-helper', secret: key(env), student: 'Ava', answer: 'hi' }), { ok: false, error: 'paused' });
+  assert.equal(rowsOf(env, 'WH_SHEET_ID').length, before, 'nothing saved while paused');
+  env.run('showStatus()');
+  assert.match(env.lastLog(), /PAUSED/);
+  env.run('resumeInbox()');
+  assert.equal(env.get().paused, false);
+  assert.equal(env.post({ action: 'join', join: made.join }).ok, true, 'same QR code works again');
 });
 
 // ── Repairs ────────────────────────────────────────────

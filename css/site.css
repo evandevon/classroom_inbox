@@ -150,3 +150,8 @@ footer a { color: var(--brand-ink); }
   .qr-label { font-size: 28pt; color: #000; }
   .qr-sub { font-size: 16pt; color: #000; }
 }
+
+/* Turning the inbox off */
+.off-list { margin: 0 0 10px; }
+.off-list dt { font-weight: 700; margin-top: 12px; }
+.off-list dd { margin: 4px 0 0; }

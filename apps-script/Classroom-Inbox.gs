@@ -1,5 +1,5 @@
 /**
- * Classroom Inbox (version 5)
+ * Classroom Inbox (version 6)
  * Receives work that students send from PagePal, Word Helper and other
  * Classroom Inbox tools. Everything lives in one folder in your Google Drive:
  *
@@ -29,8 +29,9 @@
  *      › Deploy. The address and your class QR codes stay the same.
  *
  * Security, in brief:
- *   - Class QR codes carry a short-lived JOIN code, not the sending key.
- *     A photographed QR code stops working when it expires.
+ *   - Class QR codes carry a JOIN code, not the sending key. A photographed
+ *     QR code stops working when it expires. "Forever" codes never expire:
+ *     cancelClassCodes() stops them (and all other class codes).
  *   - Sending needs the KEY, which an iPad only receives by joining.
  *   - resetCode() makes a new key: every iPad must scan a new QR code.
  *   - Files must really be JPEG, PNG or PDF (checked by their contents),
@@ -41,10 +42,19 @@
  *   - The script can only open this sheet and files it made itself,
  *     never your other files.
  *
+ * Turning it off (pick one, in the function menu at the top, then Run):
+ *   - cancelClassCodes(): new iPads can't join; joined iPads still send.
+ *   - pauseInbox() / resumeInbox(): stop receiving anything for now, and
+ *     turn it back on later. Same address, code and QR codes.
+ *   - resetCode(): new secret code; every iPad must scan a new QR code.
+ *   - For good: Deploy › Manage deployments › Archive. The web address then
+ *     stops working. Your sheets and PDFs stay in your Drive until you
+ *     delete them.
+ *
  * Adding a tool: add one entry to TOOLS below, run setup(), deploy a new version.
  */
 
-const VERSION = 5;
+const VERSION = 6;
 const TOP_FOLDER_NAME = 'Classroom Inbox';
 const HOME_TAB_NAME = 'Tools';
 const OLD_TAB_NAME = 'Submissions';              // PagePal's tab in this sheet, versions 1–4
@@ -53,6 +63,7 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;          // a page picture is usually 0.
 const MAX_BODY_CHARS = 16 * 1024 * 1024;         // whole request, as text
 const MAX_PER_MINUTE = 60;                       // a class of 30 sending at once is fine
 const MAX_PER_DAY = 1500;
+const MAX_FOREVER_CODES = 20;                    // never-expiring class codes kept at once
 const MAX_JOIN_DAYS = 80;                        // about one school term
 
 // ── The tools ──────────────────────────────────────────
@@ -177,6 +188,33 @@ function showStatus() {
   logStatus_([]);
 }
 
+/**
+ * Cancel every class QR code and link (including ones that never expire).
+ * iPads that already joined keep sending; new iPads need a new QR code.
+ */
+function cancelClassCodes() {
+  PropertiesService.getScriptProperties().deleteProperty('JOINS');
+  Logger.log('All class QR codes and links are cancelled. iPads that already joined still send work.\n' +
+    'Make a new class QR code on the Classroom Inbox teacher page when you need one.');
+}
+
+/** Turn the inbox off for now. Nothing is received until resumeInbox is run. */
+function pauseInbox() {
+  PropertiesService.getScriptProperties().setProperty('PAUSED', '1');
+  Logger.log('The inbox is paused. Students who send work are told your inbox is turned off, and nothing is saved.\n' +
+    'Run resumeInbox to turn it back on. Your web address, secret code and class QR codes stay the same.');
+}
+
+/** Turn the inbox back on after pauseInbox. */
+function resumeInbox() {
+  PropertiesService.getScriptProperties().deleteProperty('PAUSED');
+  Logger.log('The inbox is on again.');
+}
+
+function isPaused_() {
+  return PropertiesService.getScriptProperties().getProperty('PAUSED') === '1';
+}
+
 /** New secret code. Every iPad must scan a new class QR code afterwards. */
 function resetCode() {
   const props = PropertiesService.getScriptProperties();
@@ -192,7 +230,7 @@ function resetCode() {
 /** Visiting the address in a browser: a quick "is it working?" check. Reveals nothing. */
 function doGet() {
   // app stays 'PagePal Inbox': Word Helper and older PagePal pages look for it.
-  return json_({ ok: true, app: 'PagePal Inbox', name: 'Classroom Inbox', version: VERSION, tools: Object.keys(TOOLS) });
+  return json_({ ok: true, app: 'PagePal Inbox', name: 'Classroom Inbox', version: VERSION, tools: Object.keys(TOOLS), paused: isPaused_() });
 }
 
 function doPost(e) {
@@ -202,6 +240,7 @@ function doPost(e) {
   try { data = JSON.parse(body || '{}'); } catch (err) { return json_({ ok: false, error: 'bad-request' }); }
   if (!data || typeof data !== 'object') return json_({ ok: false, error: 'bad-request' });
   try {
+    if (isPaused_()) return json_({ ok: false, error: 'paused' });
     if (!withLock_(underRateLimit_)) return json_({ ok: false, error: 'busy' });
     if (data.action === 'join') return json_(withLock_(function () { return join_(data); }));
     if (data.action === 'newJoin') return json_(withLock_(function () { return newJoin_(data); }));
@@ -228,11 +267,17 @@ function withLock_(fn) {
 function newJoin_(data) {
   const props = PropertiesService.getScriptProperties();
   if (!sameCode_(data.secret, props.getProperty('KEY'))) return { ok: false, error: 'wrong-code' };
+  // days: 1–80, or 'forever' (lasts until cancelClassCodes or resetCode; expires is then 0)
+  const forever = data.days === 'forever';
   const days = Math.max(1, Math.min(MAX_JOIN_DAYS, Number(data.days) || 7));
   const joins = liveJoins_();
+  if (forever) {
+    const kept = Object.keys(joins).filter(function (k) { return joins[k].forever; });
+    if (kept.length >= MAX_FOREVER_CODES) return { ok: false, error: 'too-many-codes' };
+  }
   const join = newCode_(16);
-  const expires = Date.now() + days * 86400000;
-  joins[join] = { exp: expires, label: text_(data.label, 80) };
+  const expires = forever ? 0 : Date.now() + days * 86400000;
+  joins[join] = forever ? { exp: 0, forever: true, label: text_(data.label, 80) } : { exp: expires, label: text_(data.label, 80) };
   props.setProperty('JOINS', JSON.stringify(joins));
   return { ok: true, join: join, expires: expires };
 }
@@ -253,7 +298,7 @@ function liveJoins_() {
   let joins = {};
   try { joins = JSON.parse(props.getProperty('JOINS') || '{}'); } catch (err) { joins = {}; }
   const now = Date.now();
-  Object.keys(joins).forEach(function (k) { if (!(joins[k].exp > now)) delete joins[k]; });
+  Object.keys(joins).forEach(function (k) { if (!joins[k].forever && !(joins[k].exp > now)) delete joins[k]; });
   return joins;
 }
 
@@ -722,6 +767,11 @@ function logStatus_(notes) {
     if (props.getProperty(t.folderProp)) lines.push('  Files: ' + t.where + '  ' + folderLink_(props.getProperty(t.folderProp)));
   });
   lines.push('', 'This sheet’s "' + HOME_TAB_NAME + '" tab has the same links, with counts.');
+  const live = liveJoins_();
+  const forever = Object.keys(live).filter(function (k) { return live[k].forever; }).length;
+  lines.push('Class QR codes working now: ' + Object.keys(live).length +
+    (forever ? ' (' + forever + ' never expire; run cancelClassCodes to stop them)' : ''));
+  if (isPaused_()) lines.push('The inbox is PAUSED: nothing is being received. Run resumeInbox to turn it back on.');
   if (notes.length) {
     lines.push('', 'Also:');
     notes.forEach(function (n) { lines.push('  - ' + n); });

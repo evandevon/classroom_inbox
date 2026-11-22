@@ -11,7 +11,7 @@ test('the script and manifest are on the page, ready to copy', async ({ page, co
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await page.getByText('Show the script').click();
-  await expect(page.locator('#gs-text')).toContainText('Classroom Inbox (version 5)');
+  await expect(page.locator('#gs-text')).toContainText('Classroom Inbox (version 6)');
   await page.getByRole('button', { name: 'Copy the script' }).click();
   await expect(page.locator('#toast')).toContainText('Script copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("app: 'PagePal Inbox'");
@@ -34,12 +34,12 @@ test('deploy tabs: Updating explains the pencil, and arrow keys move between tab
   await expect(page.getByRole('tabpanel', { name: 'First time' })).toBeHidden();
 });
 
-test('checking a v5 inbox shows the version and the tools it accepts; secret never saved', async ({ page }) => {
+test('checking a v6 inbox shows the version and the tools it accepts; secret never saved', async ({ page }) => {
   const inbox = await standInInbox(page);
   await page.goto('/');
   await connect(page);
   await page.getByRole('button', { name: 'Check the connection' }).click();
-  await expect(page.locator('#check-status')).toContainText('Connected: Classroom Inbox, version 5. It accepts work from PagePal and Word Helper.');
+  await expect(page.locator('#check-status')).toContainText('Connected: Classroom Inbox, version 6. It accepts work from PagePal and Word Helper.');
   await expect(page.locator('#tools .badge.yes')).toHaveCount(2);
   await expect(page.locator('#tools')).toContainText('PagePal submissions › Class › Worksheet');
   await expect(page.locator('#tools')).toContainText('Word Helper submissions › Class');
@@ -151,4 +151,51 @@ test('a class QR code made here connects a student on the join page', async ({ p
   await expect(page.getByRole('heading', { name: 'You’re connected to Mr Evans 3/4B' })).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('pagepal.settings')).teacher);
   expect(saved).toEqual({ name: 'Mr Evans 3/4B', url: INBOX_URL, secret: SECRET });
+});
+
+test('a QR code can last forever: no expiry date, a clear warning, and it connects a student', async ({ page }) => {
+  await standInInbox(page);
+  await page.goto('/');
+  await connect(page);
+  await page.getByLabel(/connects new iPads for/).selectOption('forever');
+  await page.getByRole('button', { name: 'Make the QR code' }).click();
+  await expect(page.locator('#qr-result')).toBeVisible();
+  await expect(page.locator('#qr-expiry')).toHaveText('Connects new iPads until you cancel it');
+  await expect(page.locator('#make-status')).toHaveClass(/warn/);
+  await expect(page.locator('#make-status')).toContainText('cancelClassCodes');
+  const link = await page.locator('#qr-link').textContent();
+  const code = unb64url(new URL(link).searchParams.get('teacher'));
+  expect(code.x || 0).toBe(0);
+  expect(JSON.stringify(code)).not.toContain(SECRET);
+  await page.goto(link);
+  await page.getByRole('button', { name: 'Yes, connect' }).click();
+  await expect(page.getByRole('heading', { name: 'You’re connected to Mr Evans 3/4B' })).toBeVisible();
+});
+
+test('forever needs script version 6: an older script says so and sends nothing', async ({ page }) => {
+  const inbox = await standInInbox(page, { version: 5 });
+  await page.goto('/');
+  await connect(page);
+  await page.getByLabel(/connects new iPads for/).selectOption('forever');
+  await page.getByRole('button', { name: 'Make the QR code' }).click();
+  await expect(page.locator('#make-status')).toContainText('can’t make QR codes that never expire');
+  await expect(page.locator('#qr-result')).toBeHidden();
+  expect(inbox.requests.filter(r => r.method === 'POST')).toHaveLength(0);
+});
+
+test('a paused inbox is flagged, and making a QR code says how to resume', async ({ page }) => {
+  await standInInbox(page, { paused: true });
+  await page.goto('/');
+  await connect(page);
+  await page.getByRole('button', { name: 'Check the connection' }).click();
+  await expect(page.locator('#check-status')).toContainText('Your inbox is paused');
+  await page.getByRole('button', { name: 'Make the QR code' }).click();
+  await expect(page.locator('#make-status')).toContainText('resumeInbox');
+});
+
+test('the page explains how to turn the inbox off', async ({ page }) => {
+  await page.goto('/');
+  const off = page.getByRole('region', { name: 'Turning the inbox off' });
+  for (const fn of ['cancelClassCodes', 'pauseInbox', 'resumeInbox', 'resetCode']) await expect(off).toContainText(fn);
+  await expect(off).toContainText('Archive');
 });

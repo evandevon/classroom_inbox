@@ -130,6 +130,7 @@
         <option value="14">2 weeks</option>
         <option value="28">4 weeks</option>
         <option value="80">The whole term (80 days)</option>
+        <option value="forever">Forever (until you cancel it)</option>
       </select>
 
       <div class="buttons">
@@ -152,11 +153,28 @@
           <strong>Keeping it safe</strong>
           <ul>
             <li>Show it while students connect, then take it down. Anyone who scans it before it expires can send work to your inbox (they can never read it).</li>
-            <li>At the start of each term, or if the code spreads, run <code>resetCode</code> in Apps Script. Connected iPads then need a new QR code.</li>
+            <li>If a QR code spreads, run <code>cancelClassCodes</code> in Apps Script: no new iPads can join with it, and joined iPads keep sending. To disconnect every iPad as well, run <code>resetCode</code> (they then need a new QR code).</li>
             <li>Open students’ pictures and PDFs in Google Drive’s viewer rather than downloading them, and be wary of web links inside answers.</li>
           </ul>
         </div>
       </div>
+    </section>
+
+    <!-- ── Turning it off ─────────────────────────────── -->
+    <section class="card" aria-labelledby="h-off">
+      <h2 id="h-off">Turning the inbox off</h2>
+      <p class="lead">Open your sheet, then <strong>Extensions › Apps Script</strong>. Choose a function from the menu at the top (next to <strong>Debug</strong>) and click <strong>Run</strong>. The Execution log confirms what happened.</p>
+      <dl class="off-list">
+        <dt>Stop new iPads joining</dt>
+        <dd>Run <code>cancelClassCodes</code>. Every class QR code and link stops working, including ones that never expire. iPads that already joined keep sending.</dd>
+        <dt>Pause everything for now</dt>
+        <dd>Run <code>pauseInbox</code>. Students are told your inbox is turned off, and nothing is saved. Run <code>resumeInbox</code> to turn it back on; the address, secret code and QR codes stay the same.</dd>
+        <dt>Disconnect every iPad</dt>
+        <dd>Run <code>resetCode</code>. You get a new secret code, and students need a new class QR code to send again.</dd>
+        <dt>Turn it off for good</dt>
+        <dd><strong>Deploy › Manage deployments</strong>, select the deployment, then click the <strong>Archive</strong> icon (the box with an arrow, next to the pencil). The web address stops working. To remove the script’s access to your Google account too, go to <a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">your Google account’s third-party connections</a> and remove it. Your spreadsheets and PDFs stay in Drive until you delete them.</dd>
+      </dl>
+      <p class="hint">These switches need inbox script version 6 or later (step 2 shows your version). <code>resetCode</code> and archiving work with any version.</p>
     </section>
 
     <!-- ── Tools ──────────────────────────────────────── -->

@@ -5,7 +5,7 @@
 import { isInboxUrl } from './links.js';
 
 /** The newest script version, as shipped in apps-script/Classroom-Inbox.gs. */
-export const LATEST_VERSION = 5;
+export const LATEST_VERSION = 6;
 
 /** Where PagePal and Word Helper keep the connection (same origin, so shared). */
 export const SETTINGS_KEY = 'pagepal.settings';
@@ -43,7 +43,7 @@ export async function inboxInfo(url) {
   const version = Number(info.version) || 1;
   // Before version 4 the script took PagePal only and didn't list its tools.
   const tools = Array.isArray(info.tools) ? info.tools.map(String) : ['pagepal'];
-  return { ok: true, version, tools, name: info.name ? String(info.name) : 'PagePal Inbox' };
+  return { ok: true, version, tools, name: info.name ? String(info.name) : 'PagePal Inbox', paused: info.paused === true };
 }
 
 /** Teacher page: a new join code (this also proves the secret code is right). */
@@ -91,6 +91,7 @@ export const INBOX_ERRORS = {
   'bad-reply': 'Your teacher’s inbox didn’t answer properly. Tell your teacher.',
   'bad-request': 'Your teacher’s inbox didn’t understand the message. Tell your teacher.',
   server: 'Your teacher’s inbox had a problem. Tell your teacher.',
+  paused: 'Your teacher’s inbox is turned off right now. Tell your teacher.',
 };
 
 export function inboxError(code) {

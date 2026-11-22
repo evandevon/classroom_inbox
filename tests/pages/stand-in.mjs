@@ -7,7 +7,8 @@ export const KEY = SECRET; // the sending key is the secret code
 
 export async function standInInbox(page, opts = {}) {
   const state = {
-    version: opts.version ?? 5,
+    version: opts.version ?? 6,
+    paused: Boolean(opts.paused),
     tools: opts.tools === undefined ? ['pagepal', 'word-helper'] : opts.tools,
     joins: {},
     requests: [],
@@ -24,21 +25,24 @@ export async function standInInbox(page, opts = {}) {
       const info = { ok: true, app: 'PagePal Inbox', version: state.version };
       if (state.tools) info.tools = state.tools;
       if (state.version >= 5) info.name = 'Classroom Inbox';
+      if (state.version >= 6) info.paused = state.paused;
       return reply(info);
     }
     const data = JSON.parse(body || '{}');
+    if (state.paused) return reply({ ok: false, error: 'paused' });
     if (data.action === 'newJoin') {
       if (data.secret !== SECRET) return reply({ ok: false, error: 'wrong-code' });
+      const forever = data.days === 'forever' && state.version >= 6;
       const days = Math.max(1, Math.min(80, Number(data.days) || 7));
       const join = 'join' + Object.keys(state.joins).length + 'xxxxxxxxxxx';
-      const expires = Date.now() + days * 86400000;
+      const expires = forever ? 0 : Date.now() + days * 86400000;
       state.joins[join] = { expires, label: data.label };
       return reply({ ok: true, join, expires });
     }
     if (data.action === 'join') {
       if (state.joinReply) return reply(state.joinReply);
       const j = state.joins[data.join];
-      if (!j || j.expires < Date.now()) return reply({ ok: false, error: 'expired-join' });
+      if (!j || (j.expires && j.expires < Date.now())) return reply({ ok: false, error: 'expired-join' });
       return reply({ ok: true, key: KEY, name: j.label });
     }
     return reply({ ok: false, error: 'bad-request' });
