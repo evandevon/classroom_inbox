@@ -155,3 +155,9 @@ footer a { color: var(--brand-ink); }
 .off-list { margin: 0 0 10px; }
 .off-list dt { font-weight: 700; margin-top: 12px; }
 .off-list dd { margin: 4px 0 0; }
+
+/* Join page: paste a class link */
+.paste-form { text-align: left; margin-top: 18px; }
+.paste-row { display: flex; gap: 10px; }
+.paste-row input { flex: 1; min-width: 0; }
+.paste-msg { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--err-bg); color: var(--err-ink); }

@@ -1,9 +1,10 @@
-// Join page: a student scanned a class QR code with the iPad camera.
+// Join page: a student scanned a class QR code with the iPad camera, or
+// pasted a class link.
 // Swap the join code for the sending key and save the connection where
 // PagePal and Word Helper both look (same origin, so one save connects both).
 // The key is never shown or logged, and the code leaves the address bar.
 
-import { decodeTeacher, isExpired } from './links.js';
+import { decodeTeacher, isExpired, teacherCodeFrom } from './links.js';
 import { joinInbox, readConnection, saveConnection, inboxError } from './inbox.js';
 import { KNOWN_TOOLS } from './tools.js';
 
@@ -24,7 +25,7 @@ const code = params.get('teacher');
 // Take the code out of the address bar (and history) straight away.
 if (code !== null) history.replaceState(null, '', location.pathname + location.hash);
 
-const teacher = code ? decodeTeacher(code) : null;
+let teacher = null; // the class code being joined
 const existing = readConnection();
 
 function toolButtons() {
@@ -65,24 +66,66 @@ async function connect() {
   show('v-done');
 }
 
-if (code === null) {
+/** Ask "Send your work to …?" for a decoded class code. */
+function ask(found) {
+  teacher = found;
+  setClassName(teacher.name);
+  const switching = existing && (existing.url !== teacher.url || existing.name !== teacher.name);
+  $('#ask-switch').hidden = !switching;
+  if (switching) $('#ask-switch').textContent = `This iPad sends work to ${existing.name} now. Saying yes sends it to ${teacher.name} instead.`;
+  show('v-ask');
+}
+
+function showNone() {
   if (existing) {
     $('#none-current').hidden = false;
-    $('#none-current').textContent = `This iPad sends work to ${existing.name}. To change that, scan a new class QR code.`;
+    $('#none-current').textContent = `This iPad sends work to ${existing.name}. To change that, scan a new class QR code or paste a class link.`;
   }
   show('v-none');
-} else if (!teacher) {
-  show('v-bad');
-} else if (isExpired(teacher)) {
-  show('v-expired');
-} else {
-  setClassName(teacher.name);
-  if (existing && (existing.url !== teacher.url || existing.name !== teacher.name)) {
-    $('#ask-switch').hidden = false;
-    $('#ask-switch').textContent = `This iPad sends work to ${existing.name} now. Saying yes sends it to ${teacher.name} instead.`;
+}
+
+// A pasted class link: any web address with ?teacher=… (a Classroom Inbox,
+// PagePal or Word Helper link), even inside a longer message, or the bare code.
+function codeFromPaste(text) {
+  const raw = String(text || '').trim();
+  for (const m of raw.match(/https?:\/\/[^\s<>"']+/gi) || []) {
+    const c = teacherCodeFrom(m.replace(/[).,;!?]+$/, ''));
+    if (c) return c;
   }
-  show('v-ask');
-  $('#yes').addEventListener('click', connect);
-  $('#retry').addEventListener('click', connect);
-  $('#no').addEventListener('click', () => show('v-no'));
+  return /^[\w-]{20,}$/.test(raw) ? raw : null;
+}
+
+function pasteMessage(text) {
+  $('#paste-msg').textContent = text;
+  $('#paste-msg').hidden = !text;
+}
+
+$('#paste-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = $('#paste-link').value;
+  if (!text.trim()) return pasteMessage('Paste the class link your teacher shared first.');
+  const pasted = codeFromPaste(text);
+  const found = pasted ? decodeTeacher(pasted) : null;
+  if (!found) return pasteMessage('That isn’t a class link. Copy the whole link your teacher shared (it starts with https:// and has ?teacher= in it), then paste it again.');
+  if (isExpired(found)) return pasteMessage('That class link has expired. Ask your teacher for a new one.');
+  pasteMessage('');
+  $('#paste-link').value = '';
+  ask(found);
+});
+$('#paste-link').addEventListener('input', () => pasteMessage(''));
+document.querySelectorAll('.try-link').forEach(b => b.addEventListener('click', () => {
+  showNone();
+  $('#paste-link').focus();
+}));
+$('#yes').addEventListener('click', connect);
+$('#retry').addEventListener('click', connect);
+$('#no').addEventListener('click', () => show('v-no'));
+
+if (code === null) {
+  showNone();
+} else {
+  const found = decodeTeacher(code);
+  if (!found) show('v-bad');
+  else if (isExpired(found)) show('v-expired');
+  else ask(found);
 }

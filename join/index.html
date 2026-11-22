@@ -26,6 +26,15 @@
       <div class="emoji" aria-hidden="true">📷</div>
       <h1 id="h-none" tabindex="-1">Scan your class QR code</h1>
       <p>Open the <strong>Camera</strong> on your iPad, point it at the QR code your teacher gave you, and tap the link that appears.</p>
+      <form id="paste-form" class="paste-form" autocomplete="off" novalidate>
+        <label for="paste-link">Got a class link instead? Paste it here.</label>
+        <div class="paste-row">
+          <input id="paste-link" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 placeholder="https://evandevon.github.io/…" aria-describedby="paste-msg">
+          <button class="btn primary" type="submit">Connect</button>
+        </div>
+        <p id="paste-msg" class="paste-msg" role="alert" hidden></p>
+      </form>
       <p id="none-current" class="small" hidden></p>
       <p class="small">Teachers: make class QR codes on the <a href="../">Classroom Inbox teacher page</a>.</p>
     </section>
@@ -34,12 +43,14 @@
       <div class="emoji" aria-hidden="true">🤔</div>
       <h1 id="h-bad" tabindex="-1">That QR code didn’t work</h1>
       <p>It isn’t a class QR code this page understands. Ask your teacher for a new one.</p>
+      <div class="big-buttons"><button class="btn try-link" type="button">Paste a class link</button></div>
     </section>
 
     <section id="v-expired" class="card" hidden aria-labelledby="h-expired">
       <div class="emoji" aria-hidden="true">⏰</div>
       <h1 id="h-expired" tabindex="-1">That class QR code has expired.</h1>
       <p>Ask your teacher for a new one.</p>
+      <div class="big-buttons"><button class="btn try-link" type="button">Paste a class link</button></div>
     </section>
 
     <section id="v-ask" class="card" hidden aria-labelledby="h-ask">

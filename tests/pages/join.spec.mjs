@@ -158,3 +158,56 @@ test('everything can be done with the keyboard, with large tap targets', async (
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: /You’re connected/ })).toBeFocused();
 });
+
+// ── Pasting a class link ───────────────────────────────
+
+const fullLink = (path, o) => 'https://evandevon.github.io' + path + '?teacher=' + b64url(o);
+const CODE = () => ({ n: 'Mr Evans 3/4B', u: INBOX_URL, j: 'join0xxxxxxxxxxx', x: Date.now() + 86400000 });
+
+for (const [what, text] of [
+  ['a Classroom Inbox link', () => fullLink('/classroom_inbox/join/', CODE())],
+  ['an older PagePal class link', () => fullLink('/PagePal/', CODE())],
+  ['a link inside a longer message', () => 'Hi 3/4B! Join here: ' + fullLink('/classroom_inbox/join/', CODE()) + '. Thanks!'],
+  ['a forever link (no expiry)', () => fullLink('/classroom_inbox/join/', { ...CODE(), x: 0 })],
+]) {
+  test(`pasting ${what} connects, after asking`, async ({ page }) => {
+    const inbox = await standInInbox(page);
+    inbox.joins['join0xxxxxxxxxxx'] = { expires: Date.now() + 86400000, label: 'Mr Evans 3/4B' };
+    await openWith(page, '/join/');
+    await page.getByLabel('Got a class link instead? Paste it here.').fill(text());
+    await page.getByRole('button', { name: 'Connect' }).click();
+    await expect(page.getByRole('heading', { name: 'Send your work to Mr Evans 3/4B?' })).toBeVisible();
+    expect(inbox.requests).toHaveLength(0);
+    await page.getByRole('button', { name: 'Yes, connect' }).click();
+    await expect(page.getByRole('heading', { name: 'You’re connected to Mr Evans 3/4B' })).toBeVisible();
+    expect((await settings(page)).teacher).toEqual({ name: 'Mr Evans 3/4B', url: INBOX_URL, secret: KEY });
+    expect((await settings(page)).studentName).toBe('Mia S');
+  });
+}
+
+test('pasting something that isn’t a class link says what to copy; nothing is contacted', async ({ page }) => {
+  const inbox = await standInInbox(page);
+  await openWith(page, '/join/');
+  const box = page.getByLabel('Got a class link instead? Paste it here.');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('alert')).toContainText('Paste the class link');
+  for (const bad of ['hello', 'https://evandevon.github.io/PagePal/', fullLink('/x/', { n: 'x', u: 'https://evil.example/exec', j: 'jjjjjjjjjjjjjjjj', x: 0 })]) {
+    await box.fill(bad);
+    await page.getByRole('button', { name: 'Connect' }).click();
+    await expect(page.getByRole('alert')).toContainText('That isn’t a class link');
+  }
+  await box.fill(fullLink('/classroom_inbox/join/', { ...CODE(), x: Date.now() - 1000 }));
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('alert')).toContainText('expired');
+  await box.fill('x');
+  await expect(page.getByRole('alert')).toBeHidden();
+  expect(inbox.requests).toHaveLength(0);
+});
+
+test('after a bad or expired QR code, the student can paste a link instead', async ({ page }) => {
+  await standInInbox(page);
+  await openWith(page, link({ x: Date.now() - 1000 }));
+  await expect(page.getByRole('heading', { name: 'That class QR code has expired.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Paste a class link' }).click();
+  await expect(page.getByLabel('Got a class link instead? Paste it here.')).toBeFocused();
+});
