@@ -34,10 +34,12 @@
  *     cancelClassCodes() stops them (and all other class codes).
  *   - Sending needs the KEY, which an iPad only receives by joining.
  *   - resetCode() makes a new key: every iPad must scan a new QR code.
- *   - Files must really be JPEG, PNG or PDF (checked by their contents),
- *     5 MB at most; sends are rate-limited.
+ *   - Files must really be JPEG, PNG, PDF, or (for a tool that records)
+ *     MP3, M4A or WAV, checked by their contents; 5 MB at most each.
+ *     Sends are rate-limited.
  *   - The spreadsheets hold no formulas: students' text is stored as text
- *     and links are plain links, only to files this script made.
+ *     (and stays text if downloaded as CSV), and links are plain links,
+ *     only to files this script made.
  *   - Nothing can be read back through the web address.
  *   - The script can only open this sheet and files it made itself,
  *     never your other files.
@@ -140,12 +142,49 @@ function toolOf_(name) {
   return Object.prototype.hasOwnProperty.call(TOOLS, name) ? TOOLS[name] : null;
 }
 
-// Real file contents start with these bytes, whatever the sender claims.
-const SIGNATURES = {
-  'image/jpeg': { ext: '.jpg', bytes: [0xFF, 0xD8, 0xFF] },
-  'image/png': { ext: '.png', bytes: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] },
-  'application/pdf': { ext: '.pdf', bytes: [0x25, 0x50, 0x44, 0x46, 0x2D] }, // %PDF-
+// ── Files ──────────────────────────────────────────────
+// A submission carries files in named slots: image, pdf, audio. A tool lists
+// the slots it uses in TOOLS (files: [...]); each slot only takes its own
+// kind of file. A file is saved only if its contents really are that type
+// (checked by its first bytes, whatever the sender claims) and it is 5 MB
+// or less. No tool sends audio yet: a recording tool would list 'audio'.
+
+const SLOTS = {
+  image: 'a JPEG or PNG picture',
+  pdf: 'a PDF',
+  audio: 'an MP3, M4A or WAV recording',
 };
+
+const FILE_TYPES = {
+  'image/jpeg': { slot: 'image', ext: '.jpg', match: function (b) { return startsWith_(b, 0, [0xFF, 0xD8, 0xFF]); } },
+  'image/png': { slot: 'image', ext: '.png', match: function (b) { return startsWith_(b, 0, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); } },
+  'application/pdf': { slot: 'pdf', ext: '.pdf', match: function (b) { return startsWith_(b, 0, [0x25, 0x50, 0x44, 0x46, 0x2D]); } }, // %PDF-
+  // MP3: an "ID3" tag, or straight into an MPEG audio frame (11 sync bits).
+  'audio/mpeg': { slot: 'audio', ext: '.mp3', match: function (b) {
+    return startsWith_(b, 0, [0x49, 0x44, 0x33]) || (b.length > 1 && (b[0] & 0xFF) === 0xFF && (b[1] & 0xE0) === 0xE0);
+  } },
+  // M4A (what an iPad records): "ftyp" at byte 4.
+  'audio/mp4': { slot: 'audio', ext: '.m4a', match: function (b) { return startsWith_(b, 4, [0x66, 0x74, 0x79, 0x70]); } },
+  // WAV: "RIFF" … "WAVE".
+  'audio/wav': { slot: 'audio', ext: '.wav', match: function (b) {
+    return startsWith_(b, 0, [0x52, 0x49, 0x46, 0x46]) && startsWith_(b, 8, [0x57, 0x41, 0x56, 0x45]);
+  } },
+};
+
+// Other names browsers use for the same types.
+const TYPE_ALIASES = {
+  'image/jpg': 'image/jpeg',
+  'audio/mp3': 'audio/mpeg', 'audio/mpeg3': 'audio/mpeg',
+  'audio/x-m4a': 'audio/mp4', 'audio/m4a': 'audio/mp4',
+  'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav', 'audio/vnd.wave': 'audio/wav',
+};
+
+/** 'audio/mp4;codecs=mp4a.40.2' → the FILE_TYPES entry, or null. */
+function fileType_(type) {
+  let t = String(type || '').split(';')[0].trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(TYPE_ALIASES, t)) t = TYPE_ALIASES[t];
+  return Object.prototype.hasOwnProperty.call(FILE_TYPES, t) ? { mime: t, info: FILE_TYPES[t] } : null;
+}
 
 // ── Things you run from the editor ─────────────────────
 
@@ -334,7 +373,7 @@ function submit_(data) {
   if (uploads.length) {
     const folderId = withLock_(function () { return subFolderId_(toolName, t.subFolders(data, c)); });
     const fileName = t.fileName(data, c).map(safeName_).join(' – ');
-    uploads.forEach(function (k) { links[k] = saveFile_(folderId, data[k], fileName, notes); });
+    uploads.forEach(function (k) { links[k] = saveFile_(folderId, data[k], fileName, notes, k); });
   }
   c.notes = notes.join(' ');
 
@@ -361,24 +400,26 @@ function addRow_(tool, row) {
 }
 
 /**
- * file = {type: 'image/jpeg', base64: '...'}. Saved only if its contents
- * really are that type and it's small enough. Returns a Drive link or ''.
+ * file = {type: 'image/jpeg', base64: '...'} in slot 'image', 'pdf' or
+ * 'audio'. Saved only if it's the slot's kind of file, its contents really
+ * are that type, and it's 5 MB or less. Returns a Drive link or ''.
  */
-function saveFile_(folderId, file, baseName, notes) {
+function saveFile_(folderId, file, baseName, notes, slot) {
   if (!file || !file.base64) return '';
-  const sig = Object.prototype.hasOwnProperty.call(SIGNATURES, file.type) ? SIGNATURES[file.type] : null;
-  if (!sig) { notes.push('File refused: not a picture or PDF.'); return ''; }
+  const ft = fileType_(file.type);
+  if (!ft || ft.info.slot !== slot) { notes.push('File refused: not ' + (SLOTS[slot] || 'an accepted file') + '.'); return ''; }
+  if (String(file.base64).length > Math.ceil(MAX_FILE_BYTES / 3) * 4 + 4) { notes.push('File refused: over 5 MB.'); return ''; }
   let bytes;
   try { bytes = Utilities.base64Decode(String(file.base64)); } catch (err) { notes.push('File refused: damaged.'); return ''; }
   if (bytes.length > MAX_FILE_BYTES) { notes.push('File refused: over 5 MB.'); return ''; }
-  if (!startsWith_(bytes, sig.bytes)) { notes.push('File refused: contents don’t match a ' + sig.ext + ' file.'); return ''; }
-  const blob = Utilities.newBlob(bytes, file.type, baseName + sig.ext);
+  if (!ft.info.match(bytes)) { notes.push('File refused: contents don’t match a ' + ft.info.ext + ' file.'); return ''; }
+  const blob = Utilities.newBlob(bytes, ft.mime, baseName + ft.info.ext);
   return driveUpload_(blob, folderId);
 }
 
-function startsWith_(bytes, sig) {
-  if (bytes.length < sig.length) return false;
-  for (let i = 0; i < sig.length; i++) if ((bytes[i] & 0xFF) !== sig[i]) return false;
+function startsWith_(bytes, at, sig) {
+  if (bytes.length < at + sig.length) return false;
+  for (let i = 0; i < sig.length; i++) if ((bytes[at + i] & 0xFF) !== sig[i]) return false;
   return true;
 }
 
@@ -549,7 +590,7 @@ function appendCells_(target, rows, bold) {
     }
     if (typeof v === 'number' && isFinite(v)) return { userEnteredValue: { numberValue: v } };
     if (v === '' || v === null || v === undefined) return {};
-    const c = { userEnteredValue: { stringValue: String(v) } };
+    const c = { userEnteredValue: { stringValue: csvSafe_(String(v)) } };
     if (bold) c.userEnteredFormat = { textFormat: { bold: true } };
     return c;
   };
@@ -561,6 +602,17 @@ function appendCells_(target, rows, bold) {
     } }] };
     driveCall_('post', SHEETS + '/' + encodeURIComponent(target.id) + ':batchUpdate', JSON.stringify(body), 'application/json');
   }
+}
+
+/**
+ * Text that starts like a formula (= + - @, or a tab or return) gets an
+ * invisible word joiner in front. In Sheets it's plain text either way; this
+ * keeps it text if the sheet is downloaded as CSV and opened in Excel.
+ * Teachers' own formulas are untouched: this only applies to what the
+ * script writes.
+ */
+function csvSafe_(s) {
+  return /^[=+\-@\t\r]/.test(s) ? '\u2060' + s : s;
 }
 
 /** Links in the spreadsheets may only point to Drive files. */

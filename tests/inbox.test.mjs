@@ -178,7 +178,7 @@ test('upgrading from v4: folders move in, old rows move across once, old tab is 
   assert.equal(cellText(row[0]), '2026-11-20 11:00', 'date kept (Sydney time)');
   assert.equal(cellText(row[1]), 'Mia S');
   assert.equal(cellText(row[4]), 4.5);
-  assert.equal(cellText(row[14]), '=1+1 is two');
+  assert.equal(cellText(row[14]), '\u2060=1+1 is two', 'kept as text, safe for CSV');
   assert.equal(linkOf(row[16]), w.ids.pdfLink, 'View PDF link kept');
   assert.equal(cellText(row[16]), 'View PDF');
 
@@ -441,7 +441,8 @@ test('no text is ever stored as a formula', () => {
     }
   }
   const stored = cells.map(cellText);
-  for (const s of nasty) assert.ok(stored.includes(s.trim()), 'kept as text: ' + s);
+  for (const s of nasty) assert.ok(stored.includes('\u2060' + s.trim()), 'kept as text, safe for CSV: ' + s);
+  for (const v of stored) if (typeof v === 'string') assert.doesNotMatch(v, /^[=+\-@\t\r]/, 'starts like a formula: ' + v);
   assert.deepEqual(env.ss.formulaWrites, [], 'nothing formula-like written to the attached sheet');
 });
 
@@ -450,4 +451,65 @@ test('links only ever point at Drive', () => {
   env.run(`appendCells_(toolSheet_('pagepal'), [[{ link: 'https://evil.example/x', label: 'x' }, { link: 'javascript:alert(1)', label: 'y' }]])`);
   const last = sheetFile(env, 'PP_SHEET_ID').sheets[0].rows.at(-1).values;
   assert.deepEqual(last, [{}, {}]);
+});
+
+// ── File types ─────────────────────────────────────────
+
+const b64 = bytes => Buffer.from(bytes).toString('base64');
+const MP3_ID3 = b64([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]);
+const MP3_FRAME = b64([0xff, 0xfb, 0x90, 0x64, 0, 0, 0, 0]);
+const M4A = b64([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+const WAV = b64([0x52, 0x49, 0x46, 0x46, 0x24, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20]);
+
+/** A ready inbox with a pretend recording tool added to TOOLS. */
+function withRecorder() {
+  const env = load();
+  env.run(`TOOLS.recorder = {
+    name: 'Recorder', folder: 'Recorder submissions', where: 'Recorder submissions › Class',
+    folderProp: 'REC_FOLDER_ID', subsProp: 'REC_SUBFOLDERS', sheetProp: 'REC_SHEET_ID', tabProp: 'REC_SHEET_TAB',
+    headers: ['Received', 'Student', 'Recording', 'Notes'], files: ['audio'],
+    subFolders: function (d, c) { return [c.classFolder]; },
+    fileName: function (d, c) { return [c.label, 'Reading', c.stamp]; },
+    row: function (d, c) { return [c.received, c.label, { file: 'audio', label: 'Play recording' }, c.notes]; },
+  };`);
+  env.setup();
+  return env;
+}
+
+test('a recording tool can send MP3, M4A and WAV (any common type name)', () => {
+  const env = withRecorder();
+  const cases = [
+    ['audio/mpeg', MP3_ID3, '.mp3'], ['audio/mp3', MP3_FRAME, '.mp3'],
+    ['audio/mp4;codecs=mp4a.40.2', M4A, '.m4a'], ['audio/x-m4a', M4A, '.m4a'],
+    ['audio/wav', WAV, '.wav'], ['audio/x-wav', WAV, '.wav'],
+  ];
+  for (const [type, data, ext] of cases) {
+    const res = env.post({ tool: 'recorder', secret: key(env), student: 'Ava', className: '2R', audio: { type, base64: data } });
+    assert.deepEqual(res, { ok: true, warnings: [] }, type);
+    const row = sheetFile(env, 'REC_SHEET_ID').sheets[0].rows.at(-1).values;
+    assert.equal(cellText(row[2]), 'Play recording');
+    const file = env.google.files.get(linkOf(row[2]).match(/\/d\/([^/]+)/)[1]);
+    assert.ok(file.name.endsWith(ext), type + ' saved as ' + file.name);
+  }
+  assert.equal(env.get().tools.includes('recorder'), true);
+});
+
+test('recordings are refused when they are fakes, too big, or in the wrong slot', () => {
+  const env = withRecorder();
+  const send = (tool, extra) => env.post({ tool, secret: key(env), student: 'A', className: 'K', ...extra });
+  assert.deepEqual(send('recorder', { audio: { type: 'audio/wav', base64: PDF } }).warnings, ['File refused: contents don’t match a .wav file.']);
+  assert.deepEqual(send('recorder', { audio: { type: 'audio/mpeg', base64: JPEG } }).warnings, ['File refused: contents don’t match a .mp3 file.']);
+  assert.deepEqual(send('recorder', { audio: { type: 'audio/ogg', base64: WAV } }).warnings, ['File refused: not an MP3, M4A or WAV recording.']);
+  assert.deepEqual(send('recorder', { audio: { type: 'application/pdf', base64: PDF } }).warnings, ['File refused: not an MP3, M4A or WAV recording.']);
+  const big = Buffer.alloc(5 * 1024 * 1024 + 1);
+  Buffer.from([0x49, 0x44, 0x33]).copy(big);
+  assert.deepEqual(send('recorder', { audio: { type: 'audio/mpeg', base64: big.toString('base64') } }).warnings, ['File refused: over 5 MB.']);
+  const justRight = Buffer.alloc(5 * 1024 * 1024);
+  Buffer.from([0x49, 0x44, 0x33]).copy(justRight);
+  assert.deepEqual(send('recorder', { audio: { type: 'audio/mpeg', base64: justRight.toString('base64') } }).warnings, [], 'exactly 5 MB is fine');
+  // PagePal's PDF slot won't take a recording, and PagePal has no audio slot at all.
+  assert.deepEqual(send('pagepal', { pdf: { type: 'audio/wav', base64: WAV } }).warnings, ['File refused: not a PDF.']);
+  send('pagepal', { audio: { type: 'audio/wav', base64: WAV } });
+  assert.equal([...env.google.files.values()].filter(f => f.name.endsWith('.wav')).length, 0, 'no audio saved through PagePal');
+  assert.equal(rowsOf(env, 'PP_SHEET_ID')[0].length, 18, 'PagePal columns unchanged');
 });
